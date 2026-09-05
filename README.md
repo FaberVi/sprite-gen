@@ -142,6 +142,10 @@ The quickstart requires a Python install with working `venv`/`ensurepip`. If `py
 
 ## Quickstart
 
+> **First run on this fork?** See [`FIRST_RUN.md`](FIRST_RUN.md) for a verified
+> idle + walk fixture path (no provider credentials) and the full prepare → gen →
+> extract → compose flow for a custom character.
+
 ```bash
 # 0. install dependencies (Pillow, NumPy) into a fresh virtualenv
 python3 -m venv .venv && source .venv/bin/activate
