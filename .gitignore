@@ -5,6 +5,7 @@ __pycache__/
 .venv/
 .pytest_cache/
 /assets/
+/runs/
 app/build/dist/
 app/build/work/
 app/desktop/dist/

@@ -14,6 +14,7 @@ Providers (Gemini/OpenRouter/fal/BytePlus are intentionally **not** included):
 |---|---|---|---|---|
 | `codex` | codex `image_gen` | ChatGPT OAuth | inline base64 in the session rollout jsonl, decoded deterministically | **`native`** — image_gen returns a real alpha channel when asked (measured, then published) |
 | `grok` | grok Imagine `image_gen` / `image_edit` | xAI OAuth | file grok is told to write, verified by PNG magic | `chroma` — Imagine returns JPEG only; generate on a key and matte it out |
+| `cursor` | OpenAI Images API (`gpt-image-*`) or Cursor IDE bridge | `OPENAI_API_KEY` (default transport) or IDE bridge | PNG bytes on disk at the requested path | **`native`** — `background=transparent` when `--transparent` / native alpha is requested |
 
 The strategy is declared **once**, on the adapter (`Provider.transparency`), and is
 the only place that says what a backend can do. See
@@ -66,14 +67,16 @@ it is not a second visible-worker topology.
 
 ```bash
 sprite-gen gen \
-  [--provider codex|grok] # optional; default = SPRITE_GEN_DEFAULT_PROVIDER env → codex (observable grok fallback if codex is down)
+  [--provider codex|grok|cursor] # optional; default = SPRITE_GEN_DEFAULT_PROVIDER env → codex (observable grok fallback if codex is down)
   --prompt "…"            # or --prompt-file PROMPT.txt
   --out DEST.png \
-  [--ref REF.png ...]     # repeatable; grok routes refs through image_edit
+  [--ref REF.png ...]     # repeatable; grok/cursor route refs through image_edit
   [--transparent [--alpha-mode auto|native|chroma] [--chroma-key magenta|green]] \
   [--white-check CHECK.png] \
-  [--aspect-ratio 1:1]    # grok only (1:1, 16:9, 9:16, 4:3, 3:4, auto)
-  [--model ID] \
+  [--aspect-ratio 1:1]    # grok and cursor (1:1, 16:9, 9:16, 4:3, 3:4)
+  [--model ID]            # cursor: gpt-image-2, gpt-image-1.5, gpt-image-1, gpt-image-1-mini
+  [--quality low|medium|high]  # cursor only
+  [--list-models]         # cursor: print the model catalog and exit
   [--report REPORT.json] \
   [--keep-session]        # codex: keep the rollout jsonl instead of deleting it
 ```
@@ -161,6 +164,16 @@ exactly that, rather than falling back on its own.
   that file's PNG magic. No `--effort` is passed (the grok-build image model 400s on
   `reasoningEffort`). With `--ref`, grok uses `image_edit` on the reference instead of
   `image_gen`.
+- **cursor** — two transports, selected by `SPRITE_GEN_CURSOR_TRANSPORT`:
+  - **`openai`** (default) — calls the OpenAI Images API with the GPT Image model
+    family that powers Cursor's GenerateImage tool. Requires `OPENAI_API_KEY`.
+    `--model` selects `gpt-image-2` (default), `gpt-image-1.5`, `gpt-image-1`, or
+    `gpt-image-1-mini`. `--quality` selects `low` / `medium` / `high`.
+    `sprite-gen gen --list-models` prints the catalog.
+  - **`bridge`** — writes a job JSON under `~/.sprite-gen/cursor-bridge/inbox/` and
+    waits for a Cursor agent (or human) to run GenerateImage, then complete it with
+    `sprite-gen cursor-bridge complete --job-id <id> --from <png>`. Use this when
+    no API key is available but the IDE GenerateImage tool is.
 
 ## Sprite-row usage
 
@@ -176,7 +189,7 @@ non-zero when any row failed. `--provider` is honoured verbatim; unspecified, it
 resolves exactly as `gen` does (above), and any codex→grok availability failover is
 recorded per row.
 
-One row by hand is the same call `gen-set` makes: `--provider codex` (or `grok`) with
+One row by hand is the same call `gen-set` makes: `--provider codex` (or `grok` or `cursor`) with
 `prompts/<state>.txt`, writing `raw/<state>.png`.
 The row prompts still carry the request chroma key on the background and frame
 extraction removes it downstream — rows are generated **without** `--transparent`, so

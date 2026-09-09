@@ -13,6 +13,7 @@ MODULE_DOMAIN = {
     'generate_image': 'gen',
     'video': 'gen',
     'gen_set': 'gen',
+    'cursor_bridge': 'gen',
     'canvas': 'video',
     'frames': 'video',
     'loop': 'video',

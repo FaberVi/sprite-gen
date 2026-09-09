@@ -49,7 +49,7 @@ from sprite_gen.frames.extract import (extract_component_images, register_row_fr
 from sprite_gen.spec.layout import raw_rel, take_raw_rel
 from sprite_gen.spec.runio import load_request, write_request
 
-PROVIDERS = ("codex", "grok")
+from sprite_gen.gen import PROVIDERS
 
 # interpolator 시그니처: (img0 RGB, img1 RGB, t, prompt) -> mid RGB. 테스트는 스텁을 주입한다.
 Interpolator = Callable[[Image.Image, Image.Image, float, str], Image.Image]
