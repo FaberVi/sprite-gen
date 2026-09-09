@@ -48,7 +48,7 @@ def _prepare(tmp_path: Path, *extra: str, states: dict | None = None) -> Path:
 def _fake_runner(fail_states: set[str] = frozenset(), record: list | None = None):
     lock = threading.Lock()
 
-    def runner(prompt_file: Path, out: Path, refs: list[Path], report: Path, *, provider, model, log) -> int:
+    def runner(prompt_file: Path, out: Path, refs: list[Path], report: Path, *, provider, model, quality=None, log) -> int:
         with lock:
             if record is not None:
                 record.append((out.name, [r.name for r in refs], provider))
@@ -136,7 +136,16 @@ def test_run_gen_cli_invokes_the_cli_gen_verb(tmp_path: Path, monkeypatch) -> No
 
     monkeypatch.setattr(subprocess, "run", fake_run)
     log = tmp_path / "x.log"
-    rc = gen_set.run_gen_cli(tmp_path / "p.txt", tmp_path / "o.png", [tmp_path / "a.png", tmp_path / "b.png"], tmp_path / "r.json", provider="codex", model=None, log=log)
+    rc = gen_set.run_gen_cli(
+        tmp_path / "p.txt",
+        tmp_path / "o.png",
+        [tmp_path / "a.png", tmp_path / "b.png"],
+        tmp_path / "r.json",
+        provider="codex",
+        model=None,
+        quality=None,
+        log=log,
+    )
     assert rc == 0
     cmd = captured["cmd"]
     assert cmd[1:4] == ["-m", "sprite_gen.cli", "gen"]
@@ -144,7 +153,7 @@ def test_run_gen_cli_invokes_the_cli_gen_verb(tmp_path: Path, monkeypatch) -> No
 
 
 def _broken_report_runner(record: list | None = None):
-    def runner(prompt_file: Path, out: Path, refs: list[Path], report: Path, *, provider, model, log) -> int:
+    def runner(prompt_file: Path, out: Path, refs: list[Path], report: Path, *, provider, model, quality=None, log) -> int:
         if record is not None:
             record.append(out.name)
         log.write_text("fake gen\n", encoding="utf-8")
@@ -186,7 +195,7 @@ def test_gen_set_failed_force_regeneration_leaves_no_reusable_row(tmp_path: Path
     ok = gen_set.run_set(run_dir=run_dir, states=["idle"], provider="codex", model=None, concurrency=1, force=False, gen_runner=_fake_runner())
     assert ok["ok"] == 1
 
-    def half_writer(prompt_file: Path, out: Path, refs: list[Path], report: Path, *, provider, model, log) -> int:
+    def half_writer(prompt_file: Path, out: Path, refs: list[Path], report: Path, *, provider, model, quality=None, log) -> int:
         out.write_bytes(b"\x89PNG\r\n\x1a\n incomplete image")  # truncated overwrite
         log.write_text("provider died mid-write\n", encoding="utf-8")
         return 3

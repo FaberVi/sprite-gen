@@ -12,7 +12,7 @@ from sprite_gen.curate import anchor
 from sprite_gen.compose import compose_atlas, compose_cycle, compose_gif, compose_layers, export_aseprite, export_pngs
 from sprite_gen.qa import correction_loop, inspect, preview, score
 from sprite_gen.frames import cutout, extract, slice_sheet, unpack_atlas
-from sprite_gen.gen import gen_set, prepare, video
+from sprite_gen.gen import cursor_bridge, gen_set, prepare, video
 from sprite_gen.video import batch as video_batch
 from sprite_gen.video import canvas as video_canvas
 from sprite_gen.video import frames as video_frames
@@ -284,9 +284,14 @@ COMMANDS: dict[str, tuple[str, Callable[[argparse.ArgumentParser], None], Callab
         slice_sheet.run,
     ),
     "gen": (
-        "Generate one image via a provider (codex image_gen / grok Imagine) into a verified PNG.",
+        "Generate one image via a provider (codex / grok / cursor GPT Image) into a verified PNG.",
         _add_gen,
         gen.run,
+    ),
+    "cursor-bridge": (
+        "Complete or list Cursor IDE bridge jobs for `gen --provider cursor` (bridge transport).",
+        cursor_bridge.add_arguments,
+        cursor_bridge.run,
     ),
     "cutout": (
         "Cut a uniform (white/ivory/solid) background off an imported image into a clean transparent PNG.",

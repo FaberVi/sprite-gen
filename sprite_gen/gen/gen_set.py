@@ -100,7 +100,17 @@ def read_report(report: Path) -> tuple[dict[str, Any] | None, str | None]:
     return data, None
 
 
-def run_gen_cli(prompt_file: Path, out: Path, refs: list[Path], report: Path, *, provider: str | None, model: str | None, log: Path) -> int:
+def run_gen_cli(
+    prompt_file: Path,
+    out: Path,
+    refs: list[Path],
+    report: Path,
+    *,
+    provider: str | None,
+    model: str | None,
+    quality: str | None,
+    log: Path,
+) -> int:
     import subprocess
 
     cmd = [sys.executable, "-m", "sprite_gen.cli", "gen", "--prompt-file", str(prompt_file), "--out", str(out), "--report", str(report)]
@@ -110,6 +120,8 @@ def run_gen_cli(prompt_file: Path, out: Path, refs: list[Path], report: Path, *,
         cmd += ["--provider", provider]
     if model:
         cmd += ["--model", model]
+    if quality:
+        cmd += ["--quality", quality]
     with log.open("w", encoding="utf-8") as fh:
         return subprocess.run(cmd, stdout=fh, stderr=subprocess.STDOUT, text=True).returncode
 
@@ -121,7 +133,8 @@ def run_item(
     state: str,
     provider: str | None,
     model: str | None,
-    force: bool,
+    quality: str | None = None,
+    force: bool = False,
     gen_runner: Callable[..., int] | None = None,
 ) -> dict[str, Any]:
     gen_runner = gen_runner or run_gen_cli  # late-bound so a test can stand in for the provider call
@@ -157,7 +170,7 @@ def run_item(
         # provider runs: a provider that half-overwrites the image and exits non-zero must not
         # leave a valid-looking report next to a broken image (validator finding 2026-09-09).
         report.unlink(missing_ok=True)
-        rc = gen_runner(prompt_file, out, refs, report, provider=provider, model=model, log=log)
+        rc = gen_runner(prompt_file, out, refs, report, provider=provider, model=model, quality=quality, log=log)
         gen_report, why = read_report(report) if rc == 0 else (None, None)
         bad_image = _row_image_ok(out) if rc == 0 else None
         if rc != 0 or gen_report is None or bad_image is not None:
@@ -201,8 +214,9 @@ def run_set(
     states: list[str] | None,
     provider: str | None,
     model: str | None,
-    concurrency: int,
-    force: bool,
+    quality: str | None = None,
+    concurrency: int = DEFAULT_CONCURRENCY,
+    force: bool = False,
     gen_runner: Callable[..., int] | None = None,
 ) -> dict[str, Any]:
     gen_runner = gen_runner or run_gen_cli
@@ -214,7 +228,20 @@ def run_set(
     results: list[dict[str, Any]] = []
     for stage in _stages(request, ordered):
         with ThreadPoolExecutor(max_workers=max(1, concurrency)) as ex:
-            futures = {ex.submit(run_item, run_dir=run_dir, request=request, state=s, provider=provider, model=model, force=force, gen_runner=gen_runner): s for s in stage}
+            futures = {
+                ex.submit(
+                    run_item,
+                    run_dir=run_dir,
+                    request=request,
+                    state=s,
+                    provider=provider,
+                    model=model,
+                    quality=quality,
+                    force=force,
+                    gen_runner=gen_runner,
+                ): s
+                for s in stage
+            }
             for fut in as_completed(futures):
                 r = fut.result()
                 results.append(r)
@@ -244,8 +271,11 @@ def run_set(
 def add_arguments(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--run-dir", required=True, type=Path, help="a prepared run (sprite-request.json, prompts/, references/layout-guides/)")
     parser.add_argument("--states", help="comma list; default = every non-mirrored state in the request")
-    parser.add_argument("--provider", choices=("codex", "grok"), help="honoured verbatim; default resolves like `gen` (env > codex, observable failover)")
+    from sprite_gen.gen import PROVIDERS
+
+    parser.add_argument("--provider", choices=PROVIDERS, help="honoured verbatim; default resolves like `gen` (env > codex, observable failover)")
     parser.add_argument("--model")
+    parser.add_argument("--quality", help="cursor only: low | medium | high")
     parser.add_argument("--concurrency", type=int, default=DEFAULT_CONCURRENCY, help=f"rows generated at once (default {DEFAULT_CONCURRENCY})")
     parser.add_argument("--force", action="store_true", help="regenerate rows that already exist")
 
@@ -255,6 +285,7 @@ def run(**kwargs: object) -> int:
     payload = run_set(
         run_dir=Path(str(kwargs["run_dir"])), states=states,
         provider=kwargs.get("provider"), model=kwargs.get("model"),  # type: ignore[arg-type]
+        quality=kwargs.get("quality"),  # type: ignore[arg-type]
         concurrency=int(kwargs.get("concurrency") or DEFAULT_CONCURRENCY), force=bool(kwargs.get("force")),
     )
     return 0 if not payload["failed"] and not payload["not_started"] else 1

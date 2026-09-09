@@ -7,15 +7,17 @@ ChatGPT OAuth) and grok (Imagine, xAI OAuth). One call = prompt (+ optional refs
 post-process. The general `image-gen` skill is a thin shuttle over `sprite-gen gen`.
 
 Transparency is a per-provider strategy (`Provider.transparency`, declared once
-in each adapter): codex `image_gen` returns a genuinely transparent PNG when asked
-(`native`), grok Imagine cannot and is keyed out of a chroma background (`chroma`).
-`--transparent` follows the provider's strategy unless `--alpha-mode` overrides it.
+in each adapter): codex `image_gen` and the `cursor` GPT Image models can return
+genuinely transparent PNGs when asked (`native`); grok Imagine cannot and is keyed
+out of a chroma background (`chroma`). `--transparent` follows the provider's
+strategy unless `--alpha-mode` overrides it.
 
 CLI:
-    sprite-gen gen --provider codex|grok --prompt "..." --out DEST.png
+    sprite-gen gen --provider codex|grok|cursor --prompt "..." --out DEST.png
         [--ref REF.png ...] [--transparent [--alpha-mode auto|native|chroma]
         [--chroma-key magenta|green]] [--white-check CHECK.png] [--model ID]
-        [--aspect-ratio 1:1] [--report REPORT.json] [--keep-session]
+        [--aspect-ratio 1:1] [--quality low|medium|high] [--report REPORT.json]
+        [--keep-session] [--list-models]
 """
 
 from __future__ import annotations
@@ -45,9 +47,11 @@ from .base import (
     verify_png,
 )
 from .codex_provider import CodexProvider
+from .cursor_models import CURSOR_IMAGE_MODELS, DEFAULT_CURSOR_MODEL
+from .cursor_provider import CursorProvider
 from .grok_provider import GrokProvider
 
-PROVIDERS = ("codex", "grok")
+PROVIDERS = ("codex", "grok", "cursor")
 # `--alpha-mode`: `auto` reads the provider's declared strategy (the SSoT);
 # `native` / `chroma` force one. Forcing `native` on a chroma-only provider fails
 # loud — a strategy the backend cannot execute is not a fallback candidate.
@@ -66,11 +70,13 @@ HARD_DEFAULT_PROVIDER = "codex"
 _CODEX_PROBE_TIMEOUT_SECONDS = 15
 
 
-def _make_provider(name: str, *, keep_session: bool):
+def _make_provider(name: str, *, keep_session: bool, quality: str | None = None):
     if name == "codex":
         return CodexProvider(keep_session=keep_session)
     if name == "grok":
         return GrokProvider()
+    if name == "cursor":
+        return CursorProvider(quality=quality)
     raise SystemExit(f"gen: unknown provider {name!r}; expected one of {', '.join(PROVIDERS)}")
 
 
@@ -190,6 +196,7 @@ def generate_image(
     white_check: Path | None = None,
     keep_session: bool = False,
     workdir: Path | None = None,
+    quality: str | None = None,
 ) -> GenResult:
     """Generate one image and return a GenResult. Raises SystemExit on any failure."""
     prompt = (prompt or "").strip()
@@ -201,7 +208,7 @@ def generate_image(
         if not ref.is_file():
             raise SystemExit(f"gen: reference image not found: {ref}")
 
-    backend = _make_provider(provider, keep_session=keep_session)
+    backend = _make_provider(provider, keep_session=keep_session, quality=quality)
     # Decided before the model runs: the strategy shapes the transport prompt
     # (native asks for alpha) and the post-process (chroma keys it out).
     strategy: str | None = None
@@ -279,6 +286,16 @@ def generate_image(
 
 
 def _run(args: argparse.Namespace) -> int:
+    if args.list_models:
+        payload = {
+            "provider": "cursor",
+            "default_model": DEFAULT_CURSOR_MODEL,
+            "models": list(CURSOR_IMAGE_MODELS),
+        }
+        _print_json(payload)
+        return 0
+    if args.out is None:
+        raise SystemExit("gen: --out is required unless --list-models")
     prompt = args.prompt
     if args.prompt_file:
         prompt = Path(args.prompt_file).expanduser().read_text(encoding="utf-8")
@@ -315,6 +332,7 @@ def _run(args: argparse.Namespace) -> int:
         white_check=args.white_check,
         keep_session=args.keep_session,
         workdir=args.workdir,
+        quality=args.quality,
     )
     payload = result.to_dict()
     # `provider` in the payload is always the backend that actually generated the
@@ -368,10 +386,22 @@ def add_arguments(parser: argparse.ArgumentParser) -> None:
     )
     parser.add_argument("--prompt")
     parser.add_argument("--prompt-file", type=Path)
-    parser.add_argument("--out", required=True, type=Path)
+    parser.add_argument("--out", type=Path, help="required unless --list-models")
     parser.add_argument("--ref", action="append", type=Path, default=[], help="reference image (repeatable)")
-    parser.add_argument("--model")
-    parser.add_argument("--aspect-ratio", help="grok only, e.g. 1:1 16:9 9:16")
+    parser.add_argument("--model", help="backend model id (cursor: gpt-image-2, gpt-image-1.5, …)")
+    parser.add_argument(
+        "--aspect-ratio",
+        help="aspect ratio (grok and cursor), e.g. 1:1 16:9 9:16 4:3 3:4",
+    )
+    parser.add_argument(
+        "--quality",
+        help="cursor only: low | medium | high (default from SPRITE_GEN_CURSOR_QUALITY or medium)",
+    )
+    parser.add_argument(
+        "--list-models",
+        action="store_true",
+        help="print the cursor provider model catalog and exit",
+    )
     parser.add_argument(
         "--transparent",
         action="store_true",

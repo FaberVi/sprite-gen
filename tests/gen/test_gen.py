@@ -564,7 +564,7 @@ def test_native_strategy_publishes_measured_alpha_and_asks_provider_for_it(
     tmp_path: Path, monkeypatch
 ) -> None:
     fake = _FakeNativeProvider()
-    monkeypatch.setattr(gen, "_make_provider", lambda name, *, keep_session: fake)
+    monkeypatch.setattr(gen, "_make_provider", lambda name, *, keep_session, quality=None: fake)
     out = tmp_path / "asset.png"
     report = tmp_path / "report.json"
 
@@ -593,7 +593,7 @@ def test_native_strategy_publishes_measured_alpha_and_asks_provider_for_it(
 
 def test_chroma_strategy_reports_itself_under_alpha_too(tmp_path: Path, monkeypatch) -> None:
     fake = _FakeProvider()
-    monkeypatch.setattr(gen, "_make_provider", lambda name, *, keep_session: fake)
+    monkeypatch.setattr(gen, "_make_provider", lambda name, *, keep_session, quality=None: fake)
     out = tmp_path / "asset.png"
     report = tmp_path / "report.json"
 
@@ -619,7 +619,7 @@ def test_native_strategy_refuses_drawn_or_opaque_backgrounds(
     # A drawn checkerboard is an RGB image; a fully opaque RGBA has no transparency.
     # Neither can be rescued by chroma keying, so the run fails before publishing.
     fake = _FakeNativeProvider(image)
-    monkeypatch.setattr(gen, "_make_provider", lambda name, *, keep_session: fake)
+    monkeypatch.setattr(gen, "_make_provider", lambda name, *, keep_session, quality=None: fake)
     out = tmp_path / "asset.png"
     report = tmp_path / "report.json"
 
@@ -632,7 +632,7 @@ def test_native_strategy_refuses_drawn_or_opaque_backgrounds(
 
 def test_alpha_mode_native_is_refused_on_a_chroma_provider(tmp_path: Path, monkeypatch) -> None:
     fake = _FakeProvider()
-    monkeypatch.setattr(gen, "_make_provider", lambda name, *, keep_session: fake)
+    monkeypatch.setattr(gen, "_make_provider", lambda name, *, keep_session, quality=None: fake)
     with pytest.raises(SystemExit, match="--alpha-mode native is not a capability"):
         gen.run(**_gen_kwargs(tmp_path / "a.png", tmp_path / "r.json", alpha_mode="native"))
     assert fake.calls == 0  # refused before any model call
@@ -642,7 +642,7 @@ def test_alpha_mode_chroma_forces_keying_on_a_native_provider(tmp_path: Path, mo
     # The prompt already carries a magenta key: the native provider is told NOT to
     # return alpha and the raw is keyed out like any chroma run.
     fake = _FakeNativeProvider(Image.new("RGBA", (8, 8), (255, 0, 255, 255)))
-    monkeypatch.setattr(gen, "_make_provider", lambda name, *, keep_session: fake)
+    monkeypatch.setattr(gen, "_make_provider", lambda name, *, keep_session, quality=None: fake)
     out = tmp_path / "asset.png"
     report = tmp_path / "report.json"
 
@@ -659,7 +659,7 @@ def test_auto_steps_down_to_chroma_when_refs_are_attached(tmp_path: Path, monkey
     # `auto` therefore keys a ref run instead of gambling on native — decided before
     # the model call, printed, and recorded in the report.
     fake = _FakeNativeProvider(Image.new("RGBA", (8, 8), (255, 0, 255, 255)))
-    monkeypatch.setattr(gen, "_make_provider", lambda name, *, keep_session: fake)
+    monkeypatch.setattr(gen, "_make_provider", lambda name, *, keep_session, quality=None: fake)
     ref = tmp_path / "ref.png"
     ref.write_bytes(_png_bytes())
     out = tmp_path / "asset.png"
@@ -676,7 +676,7 @@ def test_auto_steps_down_to_chroma_when_refs_are_attached(tmp_path: Path, monkey
 
 def test_explicit_native_still_runs_with_refs(tmp_path: Path, monkeypatch) -> None:
     fake = _FakeNativeProvider()
-    monkeypatch.setattr(gen, "_make_provider", lambda name, *, keep_session: fake)
+    monkeypatch.setattr(gen, "_make_provider", lambda name, *, keep_session, quality=None: fake)
     ref = tmp_path / "ref.png"
     ref.write_bytes(_png_bytes())
     out = tmp_path / "asset.png"
@@ -696,7 +696,7 @@ def test_provider_without_a_declared_strategy_fails_loud(tmp_path: Path, monkeyp
         transparency = None
 
     fake = _Undeclared()
-    monkeypatch.setattr(gen, "_make_provider", lambda name, *, keep_session: fake)
+    monkeypatch.setattr(gen, "_make_provider", lambda name, *, keep_session, quality=None: fake)
     with pytest.raises(SystemExit, match="declares no transparency strategy"):
         gen.run(**_gen_kwargs(tmp_path / "a.png", tmp_path / "r.json"))
     assert fake.calls == 0
@@ -704,7 +704,7 @@ def test_provider_without_a_declared_strategy_fails_loud(tmp_path: Path, monkeyp
 
 def test_non_transparent_run_ignores_alpha_mode(tmp_path: Path, monkeypatch) -> None:
     fake = _FakeProvider()
-    monkeypatch.setattr(gen, "_make_provider", lambda name, *, keep_session: fake)
+    monkeypatch.setattr(gen, "_make_provider", lambda name, *, keep_session, quality=None: fake)
     out = tmp_path / "asset.png"
     report = tmp_path / "report.json"
     assert gen.run(**_gen_kwargs(out, report, transparent=False, alpha_mode="native")) == 0
@@ -714,12 +714,13 @@ def test_non_transparent_run_ignores_alpha_mode(tmp_path: Path, monkeypatch) -> 
 
 
 def test_real_providers_declare_their_transparency_strategy() -> None:
-    from sprite_gen.gen import grok_provider
+    from sprite_gen.gen import cursor_provider, grok_provider
 
     # SSoT: each adapter declares once what it can do (2026-09-08 실측 — codex
     # image_gen returns real RGBA; grok Imagine 2.0 returns JPEG from API and CLI).
     assert codex_provider.CodexProvider.transparency == gen_base.TRANSPARENCY_NATIVE
     assert grok_provider.GrokProvider.transparency == gen_base.TRANSPARENCY_CHROMA
+    assert cursor_provider.CursorProvider.transparency == gen_base.TRANSPARENCY_NATIVE
 
 
 def test_grok_refuses_a_native_alpha_request_before_spawning(tmp_path: Path, monkeypatch) -> None:
@@ -804,7 +805,7 @@ def test_generate_image_zero_percent_alpha_fails_without_success_report(
     monkeypatch,
 ) -> None:
     fake = _FakeProvider()
-    monkeypatch.setattr(gen, "_make_provider", lambda name, *, keep_session: fake)
+    monkeypatch.setattr(gen, "_make_provider", lambda name, *, keep_session, quality=None: fake)
     monkeypatch.setattr(
         chroma_mod,
         "remove_chroma_background_ycbcr",
@@ -836,7 +837,7 @@ def test_generate_image_zero_percent_alpha_fails_without_success_report(
 
 def test_generate_image_orchestrates_report_and_raw_keep(tmp_path: Path, monkeypatch) -> None:
     fake = _FakeProvider()
-    monkeypatch.setattr(gen, "_make_provider", lambda name, *, keep_session: fake)
+    monkeypatch.setattr(gen, "_make_provider", lambda name, *, keep_session, quality=None: fake)
 
     out = tmp_path / "asset.png"
     report = tmp_path / "report.json"
@@ -925,7 +926,7 @@ def _install_recording_provider(monkeypatch):
     """Monkeypatch _make_provider to record the requested name and emit a PNG."""
     requested: list[str] = []
 
-    def fake_make(name, *, keep_session):
+    def fake_make(name, *, keep_session, quality=None):
         requested.append(name)
 
         class _P:
